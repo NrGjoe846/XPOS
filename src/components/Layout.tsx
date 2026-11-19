@@ -24,10 +24,15 @@ import {
   Moon,
   Monitor,
   KeyRound,
+  Lock,
   Menu,
+  Store,
+  Sparkles,
   X,
 } from 'lucide-react';
 import { ModuleId, useApp } from '../context/AppContext';
+import { useAuthProtection } from '../context/AuthContext';
+import { getContrastTextColor, hexToRgba } from '../utils/colorExtract';
 
 interface NavGroup {
   label: string;
@@ -38,6 +43,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Front of House',
     items: [
+      { id: 'dashboard', label: 'Brand Dashboard', icon: Sparkles },
       { id: 'pos', label: 'POS & Billing', icon: LayoutGrid },
       { id: 'tables', label: 'Tables & Floor', icon: UtensilsCrossed },
       { id: 'kds', label: 'Kitchen KDS', icon: ChefHat },
@@ -93,8 +99,10 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     activeModule,
     setActiveModule,
     setPinModalOpen,
+    setOnboardingOpen,
     toasts,
   } = useApp();
+  const { user, lockSession } = useAuthProtection();
 
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
@@ -104,17 +112,40 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   };
 
   const currentLabel =
-    NAV_GROUPS.flatMap((g) => g.items).find((i) => i.id === activeModule)?.label || 'POS & Billing';
+    NAV_GROUPS.flatMap((g) => g.items).find((i) => i.id === activeModule)?.label || 'Brand Dashboard';
+
+  const brandName = db?.onboarding?.restaurantName || 'UNAI POS';
+  const brandLogo = db?.onboarding?.brandLogo;
+  const brandColor = db?.onboarding?.brandColor || '#B45309';
+  const brandFg = getContrastTextColor(brandColor);
 
   return (
     <div className="min-h-screen flex bg-[#FAF9F6] text-[#1C1917] dark:bg-[#0C0A09] dark:text-[#F5F5F4] transition-colors duration-200">
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex lg:flex-col lg:w-64 lg:shrink-0 border-r border-stone-200 dark:border-stone-800 bg-white dark:bg-[#141210] no-print">
-        <div className="h-16 px-5 flex items-center justify-between border-b border-stone-200 dark:border-stone-800">
-          <span className="font-display text-lg font-bold tracking-tight whitespace-nowrap shrink-0">
-            Nodedr OrderRestro
+        <button
+          type="button"
+          onClick={() => setActiveModule('dashboard')}
+          className="h-16 px-4 flex items-center gap-2.5 border-b border-stone-200 dark:border-stone-800 text-left hover:bg-stone-50 dark:hover:bg-stone-900/50 transition-colors"
+        >
+          {brandLogo ? (
+            <img
+              src={brandLogo}
+              alt={brandName}
+              className="w-8 h-8 rounded-lg object-contain bg-white border border-stone-200 p-0.5 shrink-0"
+            />
+          ) : (
+            <div
+              className="w-8 h-8 rounded-lg flex items-center justify-center font-display font-bold text-sm shrink-0"
+              style={{ backgroundColor: brandColor, color: brandFg }}
+            >
+              {brandName.slice(0, 1).toUpperCase()}
+            </div>
+          )}
+          <span className="font-display text-base font-bold tracking-tight truncate">
+            {brandName}
           </span>
-        </div>
+        </button>
 
         <div className="p-3 border-b border-stone-200 dark:border-stone-800">
           <label className="block text-[11px] font-medium text-stone-500 dark:text-stone-400 mb-1 px-1">
@@ -147,13 +178,18 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                     <button
                       key={item.id}
                       onClick={() => setActiveModule(item.id)}
+                      style={
+                        active
+                          ? { backgroundColor: hexToRgba(brandColor, 0.14), color: brandColor }
+                          : undefined
+                      }
                       className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-[13px] font-medium transition-colors whitespace-nowrap shrink-0 ${
                         active
-                          ? 'bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200'
+                          ? 'font-semibold'
                           : 'text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-900 hover:text-stone-900 dark:hover:text-stone-100'
                       }`}
                     >
-                      <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-amber-700 dark:text-amber-400' : ''}`} />
+                      <Icon className="w-4 h-4 shrink-0" />
                       <span className="truncate">{item.label}</span>
                     </button>
                   );
@@ -166,7 +202,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         <div className="p-3 border-t border-stone-200 dark:border-stone-800 text-xs text-stone-500 dark:text-stone-400 flex items-center justify-between">
           <div className="truncate pr-2">
             <div className="font-medium text-stone-900 dark:text-stone-100 truncate">{currentStaff?.name || 'Operator'}</div>
-            <div className="text-[11px] truncate">{currentStaff?.roleName || 'Staff'}</div>
+            <div className="text-[11px] truncate">{user?.email || currentStaff?.roleName || 'Staff'}</div>
           </div>
           <button
             onClick={() => setPinModalOpen(true)}
@@ -184,7 +220,19 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           <div className="fixed inset-0 bg-black/40" onClick={() => setMobileNavOpen(false)} />
           <aside className="relative z-10 w-72 max-w-[85vw] bg-white dark:bg-[#141210] h-full flex flex-col border-r border-stone-200 dark:border-stone-800">
             <div className="h-14 px-4 flex items-center justify-between border-b border-stone-200 dark:border-stone-800">
-              <span className="font-display font-bold">Nodedr OrderRestro</span>
+              <div className="flex items-center gap-2 min-w-0">
+                {brandLogo ? (
+                  <img src={brandLogo} alt={brandName} className="w-6 h-6 rounded object-contain bg-white border border-stone-200 p-0.5 shrink-0" />
+                ) : (
+                  <div
+                    className="w-6 h-6 rounded flex items-center justify-center font-display font-bold text-xs shrink-0"
+                    style={{ backgroundColor: brandColor, color: brandFg }}
+                  >
+                    {brandName.slice(0, 1).toUpperCase()}
+                  </div>
+                )}
+                <span className="font-display font-bold truncate">{brandName}</span>
+              </div>
               <button onClick={() => setMobileNavOpen(false)} className="p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-900">
                 <X className="w-4 h-4" />
               </button>
@@ -203,9 +251,14 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                           setActiveModule(item.id);
                           setMobileNavOpen(false);
                         }}
+                        style={
+                          active
+                            ? { backgroundColor: hexToRgba(brandColor, 0.14), color: brandColor }
+                            : undefined
+                        }
                         className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-sm font-medium ${
                           active
-                            ? 'bg-amber-50 text-amber-900 dark:bg-amber-950/50 dark:text-amber-200'
+                            ? 'font-semibold'
                             : 'text-stone-600 dark:text-stone-400'
                         }`}
                       >
@@ -242,36 +295,40 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           {/* Zone 2: 4 Clean Quick-Switch Text Links */}
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-stone-600 dark:text-stone-400">
             <button
-              onClick={() => setActiveModule('pos')}
+              onClick={() => setActiveModule('dashboard')}
+              style={activeModule === 'dashboard' ? { color: brandColor } : undefined}
               className={`hover:text-stone-900 dark:hover:text-stone-100 transition-colors whitespace-nowrap shrink-0 ${
-                activeModule === 'pos' ? 'text-amber-700 dark:text-amber-400 underline underline-offset-4' : ''
+                activeModule === 'dashboard' ? 'underline underline-offset-4 font-semibold' : ''
+              }`}
+            >
+              Dashboard
+            </button>
+            <button
+              onClick={() => setActiveModule('pos')}
+              style={activeModule === 'pos' ? { color: brandColor } : undefined}
+              className={`hover:text-stone-900 dark:hover:text-stone-100 transition-colors whitespace-nowrap shrink-0 ${
+                activeModule === 'pos' ? 'underline underline-offset-4 font-semibold' : ''
               }`}
             >
               POS Register
             </button>
             <button
               onClick={() => setActiveModule('tables')}
+              style={activeModule === 'tables' ? { color: brandColor } : undefined}
               className={`hover:text-stone-900 dark:hover:text-stone-100 transition-colors whitespace-nowrap shrink-0 ${
-                activeModule === 'tables' ? 'text-amber-700 dark:text-amber-400 underline underline-offset-4' : ''
+                activeModule === 'tables' ? 'underline underline-offset-4 font-semibold' : ''
               }`}
             >
               Floor Plan
             </button>
             <button
               onClick={() => setActiveModule('kds')}
+              style={activeModule === 'kds' ? { color: brandColor } : undefined}
               className={`hover:text-stone-900 dark:hover:text-stone-100 transition-colors whitespace-nowrap shrink-0 ${
-                activeModule === 'kds' ? 'text-amber-700 dark:text-amber-400 underline underline-offset-4' : ''
+                activeModule === 'kds' ? 'underline underline-offset-4 font-semibold' : ''
               }`}
             >
               Kitchen KDS
-            </button>
-            <button
-              onClick={() => setActiveModule('analytics')}
-              className={`hover:text-stone-900 dark:hover:text-stone-100 transition-colors whitespace-nowrap shrink-0 ${
-                activeModule === 'analytics' ? 'text-amber-700 dark:text-amber-400 underline underline-offset-4' : ''
-              }`}
-            >
-              Reports
             </button>
           </nav>
 
@@ -279,7 +336,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => setActiveModule('pos')}
-              className="px-4 py-2 rounded-lg bg-amber-700 hover:bg-amber-800 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
+              style={{ backgroundColor: brandColor, color: brandFg }}
+              className="px-4 py-2 rounded-lg text-xs font-semibold transition-opacity hover:opacity-95 whitespace-nowrap shrink-0"
             >
               New Order
             </button>
@@ -298,6 +356,13 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
 
           <div className="flex items-center gap-2">
             <button
+              onClick={() => setOnboardingOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#171412] text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-900 whitespace-nowrap shrink-0"
+            >
+              <Store className="w-3.5 h-3.5" />
+              <span>Setup</span>
+            </button>
+            <button
               onClick={openSecondScreen}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#171412] text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-900 whitespace-nowrap shrink-0"
             >
@@ -310,6 +375,13 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             >
               <KeyRound className="w-3.5 h-3.5" />
               <span>Switch PIN</span>
+            </button>
+            <button
+              onClick={lockSession}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#171412] text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-900 whitespace-nowrap shrink-0"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span>Lock</span>
             </button>
             <button
               onClick={toggleDarkMode}

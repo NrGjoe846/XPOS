@@ -3,6 +3,7 @@ import { AppDatabase, Branch, Order, StaffUser, TenderMethod } from '../types/po
 import { playKitchenAlertChime, playUpiSuccessChime } from '../utils/hardware';
 
 export type ModuleId =
+  | 'dashboard'
   | 'pos'
   | 'tables'
   | 'kds'
@@ -68,6 +69,8 @@ interface AppContextValue {
   broadcastSecondScreen: (payload: SecondScreenPayload) => void;
   pinModalOpen: boolean;
   setPinModalOpen: (v: boolean) => void;
+  onboardingOpen: boolean;
+  setOnboardingOpen: (v: boolean) => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -84,9 +87,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeModule, setActiveModule] = useState<ModuleId>('pos');
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpenState] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return new URLSearchParams(window.location.search).get('mode') === 'onboarding';
+  });
 
   const bcRef = useRef<BroadcastChannel | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
+  const checkedOnboardingRef = useRef<boolean>(false);
+
+  const setOnboardingOpen = useCallback((v: boolean) => {
+    setOnboardingOpenState(v);
+    if (!v && typeof window !== 'undefined') {
+      sessionStorage.setItem('orderrestro_onboarding_dismissed', '1');
+    }
+  }, []);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', darkMode);
@@ -113,11 +128,19 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       setDb(data);
       setCurrentStaff((prev) => {
         if (prev) {
-          return data.staff.find((s) => s.id === prev.id) || data.staff[0] || null;
+          return data.staff.find((s) => s.id === prev.id) || null;
         }
-        return data.staff[0] || null;
+        return null;
       });
       setActiveBranchId((prev) => (data.branches.some((b) => b.id === prev) ? prev : data.branches[0]?.id || 'br-blr-1'));
+      if (!checkedOnboardingRef.current) {
+        checkedOnboardingRef.current = true;
+        const dismissed = typeof window !== 'undefined' && sessionStorage.getItem('orderrestro_onboarding_dismissed') === '1';
+        const urlMode = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('mode') : null;
+        if (urlMode === 'onboarding' || (!data.onboarding?.completed && !dismissed)) {
+          setOnboardingOpenState(true);
+        }
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -194,6 +217,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const timer = window.setInterval(() => {
       const mins = db?.securitySettings?.sessionTimeoutMinutes || 30;
       if (Date.now() - lastActivityRef.current > mins * 60 * 1000) {
+        window.dispatchEvent(new CustomEvent('orderrestro:session-lock'));
         setPinModalOpen(true);
         lastActivityRef.current = Date.now();
       }
@@ -307,6 +331,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         broadcastSecondScreen,
         pinModalOpen,
         setPinModalOpen,
+        onboardingOpen,
+        setOnboardingOpen,
       }}
     >
       {children}

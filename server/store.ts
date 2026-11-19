@@ -13,6 +13,7 @@ import {
 } from '../src/types/pos.ts';
 import { calculateMultiRegionTax } from '../src/utils/taxEngine.ts';
 import { createSeedDatabase } from './seed.ts';
+import { loadStateFromSupabase, saveStateToSupabase } from './supabase.ts';
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
 const DB_FILE = path.join(DATA_DIR, 'orderrestro-db.json');
@@ -30,6 +31,18 @@ export class PosStore {
     this.onBroadcast = fn;
   }
 
+  public async hydrateFromSupabase(): Promise<boolean> {
+    const remote = await loadStateFromSupabase();
+    if (remote && Array.isArray(remote.branches) && remote.branches.length > 0) {
+      this.db = remote;
+      this.saveLocalOnly(remote);
+      return true;
+    }
+    // Attempt initial push of seeded state if table exists
+    await saveStateToSupabase(this.db);
+    return false;
+  }
+
   private load(): AppDatabase {
     try {
       if (fs.existsSync(DB_FILE)) {
@@ -43,11 +56,11 @@ export class PosStore {
       console.error('Failed to load DB file, re-seeding:', err);
     }
     const seeded = createSeedDatabase();
-    this.save(seeded);
+    this.saveLocalOnly(seeded);
     return seeded;
   }
 
-  private save(nextDb?: AppDatabase): void {
+  private saveLocalOnly(nextDb?: AppDatabase): void {
     if (nextDb) this.db = nextDb;
     if (!fs.existsSync(DATA_DIR)) {
       fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -55,6 +68,11 @@ export class PosStore {
     const tmp = `${DB_FILE}.tmp`;
     fs.writeFileSync(tmp, JSON.stringify(this.db, null, 2), 'utf-8');
     fs.renameSync(tmp, DB_FILE);
+  }
+
+  private save(nextDb?: AppDatabase): void {
+    this.saveLocalOnly(nextDb);
+    void saveStateToSupabase(this.db);
   }
 
   public getState(): AppDatabase {

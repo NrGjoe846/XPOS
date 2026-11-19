@@ -747,5 +747,13 @@ export function createSeedDatabase(): AppDatabase {
       requirePinOnOrderVoid: true,
       interstateIgstEnabled: false,
     },
+    onboarding: {
+      completed: false,
+      restaurantName: 'UNAI POS',
+      brandColor: '#B45309',
+      cuisineType: 'Modern Indian & Craft',
+      posMode: 'full_service',
+      isGstRegistered: false,
+    },
   };
 }

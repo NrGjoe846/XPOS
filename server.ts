@@ -9,7 +9,10 @@ import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import { PosStore } from './server/store.ts';
 import { createSeedDatabase } from './server/seed.ts';
+import { checkSupabaseTableReady, saveStateToSupabase } from './server/supabase.ts';
 
+const envLocal = path.resolve(process.cwd(), '.env.local');
+if (fs.existsSync(envLocal)) dotenv.config({ path: envLocal });
 dotenv.config();
 
 const PORT = Number(process.env.PORT || 3000);
@@ -43,6 +46,16 @@ app.get('/api/health', (_req, res) => {
 
 app.get('/api/state', (_req, res) => {
   res.json(store.getState());
+});
+
+app.get('/api/supabase/status', async (_req, res) => {
+  const status = await checkSupabaseTableReady();
+  res.json(status);
+});
+
+app.post('/api/supabase/sync', async (_req, res) => {
+  const result = await saveStateToSupabase(store.getState());
+  res.json(result);
 });
 
 // --- QR Code DataURL generator (UPI & Table QR) ---
@@ -87,6 +100,222 @@ app.post('/api/auth/verify-2fa', (req, res) => {
     return res.json({ verified: true, method: isRecovery ? 'recovery_code' : 'totp' });
   }
   return res.status(400).json({ error: 'Invalid 6-digit authenticator code or recovery code.' });
+});
+
+// --- Supabase Google OAuth Popup Callback ---
+app.get(['/auth/callback', '/auth/callback/'], (_req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Completing Sign-In...</title>
+    <style>
+      body { font-family: system-ui, -apple-system, sans-serif; background: #FAF9F6; color: #1C1917; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+      .box { background: #fff; border: 1px solid #e7e5e4; border-radius: 12px; padding: 24px 28px; text-align: center; max-width: 340px; }
+      h2 { margin: 0 0 8px; font-size: 16px; }
+      p { margin: 0; font-size: 13px; color: #78716c; }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h2>Authentication Complete</h2>
+      <p>Connecting your Gmail session to Nodedr OrderRestro...</p>
+    </div>
+    <script>
+      (function () {
+        var searchParams = new URLSearchParams(window.location.search);
+        var hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+        var payload = {
+          type: 'SUPABASE_OAUTH_CALLBACK',
+          code: searchParams.get('code'),
+          accessToken: hashParams.get('access_token'),
+          refreshToken: hashParams.get('refresh_token'),
+          error: searchParams.get('error') || hashParams.get('error'),
+          errorDescription: searchParams.get('error_description') || hashParams.get('error_description')
+        };
+        if (window.opener) {
+          window.opener.postMessage(payload, '*');
+          setTimeout(function () { window.close(); }, 250);
+        } else {
+          window.location.replace('/?mode=onboarding' + window.location.search + window.location.hash);
+        }
+      })();
+    </script>
+  </body>
+</html>`);
+});
+
+// --- Restaurant Onboarding Completion ---
+app.post('/api/onboarding/complete', (req, res) => {
+  const {
+    restaurantName,
+    branchCode,
+    city,
+    address,
+    phone,
+    cuisineType,
+    posMode,
+    taxRegime,
+    currency,
+    currencySymbol,
+    gstin,
+    isGstRegistered,
+    fssai,
+    upiVpa,
+    upiMerchantName,
+    defaultTaxRate,
+    serviceChargeRate,
+    ownerName,
+    ownerContact,
+    ownerEmail,
+    ownerPin,
+    brandLogo,
+    brandColor,
+    tableCount,
+    starterDish,
+  } = req.body || {};
+
+  if (!restaurantName || !String(restaurantName).trim()) {
+    return res.status(400).json({ error: 'Restaurant name is required to complete onboarding.' });
+  }
+
+  let ownerStaffId = '';
+  const db = store.mutate((d) => {
+    const branch = d.branches[0];
+    if (branch) {
+      branch.name = String(restaurantName).trim();
+      if (branchCode) branch.code = String(branchCode).trim().toUpperCase();
+      if (city) branch.city = String(city).trim();
+      if (address) branch.address = String(address).trim();
+      if (phone || ownerContact) branch.phone = String(phone || ownerContact).trim();
+      if (taxRegime) branch.taxRegime = taxRegime;
+      if (currency) branch.currency = currency;
+      if (currencySymbol) branch.currencySymbol = currencySymbol;
+      if (isGstRegistered === false) {
+        branch.gstin = '';
+      } else if (typeof gstin === 'string') {
+        branch.gstin = gstin.trim().toUpperCase();
+      }
+      if (typeof fssai === 'string') branch.fssai = fssai.trim();
+      if (upiVpa) branch.upiVpa = String(upiVpa).trim();
+      branch.upiMerchantName = String(upiMerchantName || restaurantName).trim();
+      if (typeof defaultTaxRate === 'number' && !Number.isNaN(defaultTaxRate)) {
+        branch.defaultTaxRate = defaultTaxRate;
+      }
+      if (typeof serviceChargeRate === 'number' && !Number.isNaN(serviceChargeRate)) {
+        branch.serviceChargeRate = serviceChargeRate;
+      }
+    }
+
+    const cleanPin = /^\d{4,6}$/.test(String(ownerPin || '').trim()) ? String(ownerPin).trim() : '1111';
+    const cleanEmail = String(ownerEmail || '').trim().toLowerCase();
+    const cleanOwnerName = String(ownerName || 'Restaurant Owner').trim();
+
+    let owner =
+      (cleanEmail ? d.staff.find((s) => s.email.toLowerCase() === cleanEmail) : null) ||
+      d.staff.find((s) => s.roleId === 'role-owner') ||
+      d.staff[0];
+
+    if (owner) {
+      owner.name = cleanOwnerName || owner.name;
+      if (cleanEmail) owner.email = cleanEmail;
+      owner.pin = cleanPin;
+      owner.active = true;
+      ownerStaffId = owner.id;
+    } else {
+      ownerStaffId = `st-${Date.now()}`;
+      d.staff.unshift({
+        id: ownerStaffId,
+        branchId: branch?.id || 'br-blr-1',
+        name: cleanOwnerName,
+        email: cleanEmail || 'owner@orderrestro.in',
+        roleId: 'role-owner',
+        roleName: 'Owner / Admin',
+        pin: cleanPin,
+        hourlyRate: 450,
+        overtimeMultiplier: 1.5,
+        latePenaltyPerIncident: 150,
+        twoFactorEnabled: false,
+        recoveryCodes: [],
+        active: true,
+      });
+    }
+
+    // Ensure requested table count exists for flagship branch
+    const targetTables = Number(tableCount || 0);
+    if (branch && targetTables > 0) {
+      const existingForBranch = d.tables.filter((t) => t.branchId === branch.id);
+      const layoutId = d.floorLayouts.find((fl) => fl.branchId === branch.id)?.id || d.floorLayouts[0]?.id || 'fl-1';
+      if (existingForBranch.length < targetTables) {
+        for (let i = existingForBranch.length + 1; i <= Math.min(targetTables, 30); i++) {
+          const col = (i - 1) % 4;
+          const row = Math.floor((i - 1) / 4);
+          d.tables.push({
+            id: `tbl-onb-${Date.now()}-${i}`,
+            branchId: branch.id,
+            layoutId,
+            label: `T-${String(i).padStart(2, '0')}`,
+            seats: i % 3 === 0 ? 6 : 4,
+            x: 40 + col * 145,
+            y: 40 + row * 120,
+            shape: i % 4 === 0 ? 'round' : 'square',
+            status: 'free',
+            sessionCode: String(1000 + Math.floor(Math.random() * 8999)),
+            sessionCodeActive: false,
+          });
+        }
+      }
+    }
+
+    // Optional starter signature dish
+    if (starterDish && starterDish.name && Number(starterDish.price) > 0) {
+      const catId = starterDish.categoryId || d.categories[0]?.id || 'cat-mains';
+      const cat = d.categories.find((c) => c.id === catId);
+      d.menuItems.unshift({
+        id: `menu-onb-${Date.now()}`,
+        categoryId: catId,
+        name: String(starterDish.name).trim(),
+        description: String(starterDish.description || 'House signature dish added during onboarding.').trim(),
+        price: Number(starterDish.price),
+        taxRate: Number(starterDish.taxRate ?? branch?.defaultTaxRate ?? 5),
+        station: cat?.station || 'Main Kitchen',
+        dietary: starterDish.dietary || 'veg',
+        modifierGroupIds: [],
+        available: true,
+        recipe: [],
+        lastCostPerUnit: +(Number(starterDish.price) * 0.32).toFixed(2),
+        priceHistory: [],
+      });
+    }
+
+    d.onboarding = {
+      completed: true,
+      restaurantName: String(restaurantName).trim(),
+      brandLogo: typeof brandLogo === 'string' && brandLogo.trim() ? brandLogo : d.onboarding?.brandLogo,
+      brandColor: typeof brandColor === 'string' && /^#[0-9a-fA-F]{3,6}$/.test(brandColor.trim())
+        ? brandColor.trim()
+        : d.onboarding?.brandColor || '#B45309',
+      cuisineType: String(cuisineType || 'Multi-Cuisine').trim(),
+      posMode: posMode || 'full_service',
+      ownerEmail: cleanEmail || undefined,
+      ownerName: cleanOwnerName,
+      ownerContact: String(ownerContact || phone || '').trim() || undefined,
+      isGstRegistered: Boolean(isGstRegistered),
+      gstin: isGstRegistered && typeof gstin === 'string' ? gstin.trim().toUpperCase() : undefined,
+      completedAt: new Date().toISOString(),
+    };
+
+    store.logAudit(
+      cleanOwnerName,
+      'RESTAURANT_ONBOARDED',
+      String(restaurantName).trim(),
+      `Regime: ${branch?.taxRegime || 'IN_GST'}, UPI: ${branch?.upiVpa || ''}, Tables ready`
+    );
+  }, 'state:mutated', { type: 'onboarding_complete' });
+
+  const ownerStaff = db.staff.find((s) => s.id === ownerStaffId) || db.staff[0];
+  res.json({ state: db, ownerStaff });
 });
 
 // --- Orders, Billing, Split, Merge, Refunds ---
@@ -147,6 +376,27 @@ app.post('/api/orders/:id/rate', (req, res) => {
       order.rating = { score: Number(score), comment: String(comment || ''), createdAt: new Date().toISOString() };
     }
   });
+  res.json({ state: db });
+});
+
+app.post('/api/orders/:id/void', (req, res) => {
+  const { reason, actorName } = req.body || {};
+  const db = store.mutate((d) => {
+    const order = d.orders.find((o) => o.id === req.params.id);
+    if (!order) return;
+    order.status = 'voided';
+    order.updatedAt = new Date().toISOString();
+    if (order.tableId) {
+      const tbl = d.tables.find((t) => t.id === order.tableId);
+      if (tbl && tbl.currentOrderId === order.id) {
+        tbl.status = 'free';
+        tbl.currentOrderId = undefined;
+        tbl.waiterAlert = false;
+        tbl.billAlert = false;
+      }
+    }
+    store.logAudit(actorName || 'Cashier', 'ORDER_VOIDED', order.orderNumber, reason || 'Voided at POS register');
+  }, 'order:updated', { orderId: req.params.id });
   res.json({ state: db });
 });
 
@@ -771,6 +1021,9 @@ async function startServer() {
 
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`Nodedr OrderRestro server running on http://0.0.0.0:${PORT}`);
+    void store.hydrateFromSupabase().then((hydrated) => {
+      if (hydrated) broadcast('state:mutated', { source: 'supabase' });
+    });
   });
 }
 

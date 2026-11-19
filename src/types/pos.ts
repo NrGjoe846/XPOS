@@ -617,6 +617,21 @@ export interface SmtpConfig {
   configured: boolean;
 }
 
+export interface RestaurantOnboarding {
+  completed: boolean;
+  restaurantName: string;
+  brandLogo?: string;
+  brandColor?: string;
+  cuisineType?: string;
+  posMode?: 'full_service' | 'quick_service' | 'cafe';
+  ownerEmail?: string;
+  ownerName?: string;
+  ownerContact?: string;
+  isGstRegistered?: boolean;
+  gstin?: string;
+  completedAt?: string;
+}
+
 export interface AppDatabase {
   branches: Branch[];
   roles: Role[];
@@ -668,4 +683,5 @@ export interface AppDatabase {
     requirePinOnOrderVoid: boolean;
     interstateIgstEnabled: boolean;
   };
+  onboarding?: RestaurantOnboarding;
 }

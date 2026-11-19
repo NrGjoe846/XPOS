@@ -355,6 +355,25 @@ export const PosBillingModule: React.FC = () => {
     setActiveOrderId(null);
   };
 
+  const handleVoidOrder = async () => {
+    if (!activeOrder) return;
+    const res = await fetch(`/api/orders/${activeOrder.id}/void`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        reason: 'Voided at POS register',
+        actorName: currentStaff?.name || 'Cashier',
+      }),
+    });
+    if (res.ok) {
+      await refreshState();
+      setActiveOrderId(null);
+      notify(`Voided ${activeOrder.orderNumber}`, 'info');
+    } else {
+      notify('Unable to void order', 'error');
+    }
+  };
+
   const handleMergeBills = async () => {
     if (!activeOrder || !mergeSourceId) return;
     const res = await fetch('/api/orders/merge', {
@@ -407,7 +426,7 @@ export const PosBillingModule: React.FC = () => {
           {/* Channel & Table Selector */}
           <div className="bg-white dark:bg-[#171412] border border-stone-200 dark:border-stone-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-1 p-1 bg-stone-100 dark:bg-stone-900 rounded-lg">
-              {(['dine_in', 'takeaway', 'delivery'] as OrderChannel[]).map((ch) => (
+              {(['dine_in', 'takeaway', 'click_collect', 'delivery'] as OrderChannel[]).map((ch) => (
                 <button
                   key={ch}
                   onClick={() => {
@@ -420,7 +439,13 @@ export const PosBillingModule: React.FC = () => {
                       : 'text-stone-600 dark:text-stone-400'
                   }`}
                 >
-                  {ch === 'dine_in' ? 'Dine-In' : ch === 'takeaway' ? 'Takeaway' : 'Delivery'}
+                  {ch === 'dine_in'
+                    ? 'Dine-In'
+                    : ch === 'takeaway'
+                    ? 'Takeaway'
+                    : ch === 'click_collect'
+                    ? 'Pickup'
+                    : 'Delivery'}
                 </button>
               ))}
             </div>
@@ -592,14 +617,25 @@ export const PosBillingModule: React.FC = () => {
                 {activeOrder ? `${activeOrder.tableLabel || activeOrder.channel} · ${activeOrder.status}` : `${channel.replace('_', ' ')}`}
               </div>
             </div>
-            {activeOrder && openOrders.length > 1 && (
-              <button
-                onClick={() => setMergeModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-stone-200 dark:border-stone-800 text-xs font-medium hover:bg-stone-50 dark:hover:bg-stone-900"
-              >
-                <GitMerge className="w-3.5 h-3.5" />
-                <span>Merge Bill</span>
-              </button>
+            {activeOrder && (
+              <div className="flex items-center gap-2 shrink-0">
+                {openOrders.length > 1 && (
+                  <button
+                    onClick={() => setMergeModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-stone-200 dark:border-stone-800 text-xs font-medium hover:bg-stone-50 dark:hover:bg-stone-900 whitespace-nowrap"
+                  >
+                    <GitMerge className="w-3.5 h-3.5" />
+                    <span>Merge Bill</span>
+                  </button>
+                )}
+                <button
+                  onClick={handleVoidOrder}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-red-200 dark:border-red-900/60 text-red-700 dark:text-red-400 text-xs font-medium hover:bg-red-50 dark:hover:bg-red-950/30 whitespace-nowrap"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Void</span>
+                </button>
+              </div>
             )}
           </div>
 
@@ -985,11 +1021,25 @@ export const PosBillingModule: React.FC = () => {
                       ))}
                     </div>
                   </div>
-                  <div className="text-xs text-stone-600 dark:text-stone-400">
-                    Per guest share ({splitCount} ways):{' '}
-                    <span className="font-mono font-bold text-stone-900 dark:text-stone-100">
-                      {formatMoney((activeOrder.grandTotal - activeOrder.paidTotal) / splitCount, sym)}
-                    </span>
+                  <div className="flex items-center justify-between gap-2 text-xs text-stone-600 dark:text-stone-400">
+                    <div>
+                      Per guest share ({splitCount} ways):{' '}
+                      <span className="font-mono font-bold text-stone-900 dark:text-stone-100">
+                        {formatMoney((activeOrder.grandTotal - activeOrder.paidTotal) / splitCount, sym)}
+                      </span>
+                    </div>
+                    {splitCount > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const share = +((activeOrder.grandTotal - activeOrder.paidTotal) / splitCount).toFixed(2);
+                          setTenderAmount(share);
+                        }}
+                        className="px-2 py-1 rounded border border-amber-600/50 text-amber-800 dark:text-amber-300 text-[11px] font-semibold hover:bg-amber-50 dark:hover:bg-amber-950/30 whitespace-nowrap shrink-0"
+                      >
+                        Use Share
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1021,20 +1071,68 @@ export const PosBillingModule: React.FC = () => {
                     />
                     <button
                       onClick={addTenderLine}
-                      className="px-3 py-2 rounded-lg border border-stone-200 dark:border-stone-800 text-xs font-semibold hover:bg-stone-50 dark:hover:bg-stone-900"
+                      className="px-3 py-2 rounded-lg border border-stone-200 dark:border-stone-800 text-xs font-semibold hover:bg-stone-50 dark:hover:bg-stone-900 whitespace-nowrap shrink-0"
                     >
                       + Add Split
                     </button>
                   </div>
+                  {tenderMethod === 'cash' && (
+                    <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                      <button
+                        type="button"
+                        onClick={() => setTenderAmount(+(activeOrder.grandTotal - activeOrder.paidTotal).toFixed(2))}
+                        className="px-2 py-1 rounded border border-stone-200 dark:border-stone-800 hover:bg-stone-100 dark:hover:bg-stone-800 font-mono"
+                      >
+                        Exact
+                      </button>
+                      {[100, 500, 1000, 2000].map((amt) => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => setTenderAmount(amt)}
+                          className="px-2 py-1 rounded border border-stone-200 dark:border-stone-800 hover:bg-stone-100 dark:hover:bg-stone-800 font-mono"
+                        >
+                          {sym}{amt}
+                        </button>
+                      ))}
+                      {tenderAmount > activeOrder.grandTotal - activeOrder.paidTotal && (
+                        <span className="ml-auto font-mono font-semibold text-emerald-700 dark:text-emerald-400">
+                          Change: {formatMoney(tenderAmount - (activeOrder.grandTotal - activeOrder.paidTotal), sym)}
+                        </span>
+                      )}
+                    </div>
+                  )}
 
                   {tenders.length > 0 && (
                     <div className="space-y-1 pt-1">
                       {tenders.map((t, i) => (
-                        <div key={i} className="flex justify-between text-xs px-2 py-1 rounded bg-stone-100 dark:bg-stone-900">
-                          <span>{t.method.toUpperCase()}</span>
-                          <span className="font-mono tabular-nums">{formatMoney(t.amount, sym)}</span>
+                        <div key={i} className="flex items-center justify-between text-xs px-2.5 py-1.5 rounded bg-stone-100 dark:bg-stone-900">
+                          <span className="font-medium">{t.method.toUpperCase()}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono tabular-nums">{formatMoney(t.amount, sym)}</span>
+                            <button
+                              type="button"
+                              onClick={() => setTenders((prev) => prev.filter((_, idx) => idx !== i))}
+                              className="text-stone-400 hover:text-red-600"
+                              aria-label="Remove tender split"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
                         </div>
                       ))}
+                      <div className="flex justify-between text-[11px] font-mono px-1 pt-1 text-stone-500">
+                        <span>Remaining Balance</span>
+                        <span>
+                          {formatMoney(
+                            Math.max(
+                              0,
+                              activeOrder.grandTotal - activeOrder.paidTotal - tenders.reduce((s, x) => s + x.amount, 0)
+                            ),
+                            sym
+                          )}
+                        </span>
+                      </div>
                     </div>
                   )}
                 </div>

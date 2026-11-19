@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ShieldCheck, Plug, Settings, Volume2, Printer, Send, Terminal, Download, Upload } from 'lucide-react';
 import { useApp } from '../context/AppContext';
+import { useAuthProtection } from '../context/AuthContext';
 import { TaxRegime } from '../types/pos';
 import { downloadJson } from '../utils/export';
 import { kickCashDrawerWebUSB, playUpiSuccessChime, printViaWebUSB } from '../utils/hardware';
@@ -26,7 +27,18 @@ export const SecurityIntegrationsAdminModule: React.FC<{ initialTab?: 'security'
   initialTab = 'security',
 }) => {
   const { db, activeBranch, currentStaff, mutate, refreshState, notify, setPinModalOpen } = useApp();
+  const {
+    user,
+    supabaseAuthenticated: isAuthenticated,
+    authLoading,
+    authError,
+    signInWithPassword,
+    signUp,
+    signOut,
+  } = useAuthProtection();
   const [tab, setTab] = useState<'security' | 'integrations' | 'admin'>(initialTab);
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
 
   // 2FA verification test
   const [twoFaCode, setTwoFaCode] = useState('');
@@ -120,6 +132,70 @@ export const SecurityIntegrationsAdminModule: React.FC<{ initialTab?: 'security'
       {tab === 'security' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-5 space-y-4">
+            <div className="bg-white dark:bg-[#171412] border border-stone-200 dark:border-stone-800 rounded-xl p-5 space-y-3 text-xs">
+              <h3 className="font-display font-semibold text-sm">Supabase Account Session</h3>
+              {isAuthenticated && user ? (
+                <div className="flex items-center justify-between gap-2">
+                  <div className="truncate">
+                    <div className="font-semibold truncate">{user.email}</div>
+                    <div className="text-stone-500">Signed in</div>
+                  </div>
+                  <button
+                    onClick={async () => {
+                      await signOut();
+                      notify('Signed out of Supabase session', 'info');
+                    }}
+                    disabled={authLoading}
+                    className="px-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-800 font-semibold shrink-0"
+                  >
+                    Sign Out
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="email"
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      placeholder="Email"
+                      className="px-2.5 py-1.5 rounded-lg border border-stone-200 dark:border-stone-800 bg-[#FAF9F6] dark:bg-[#1C1917]"
+                    />
+                    <input
+                      type="password"
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      placeholder="Password"
+                      className="px-2.5 py-1.5 rounded-lg border border-stone-200 dark:border-stone-800 bg-[#FAF9F6] dark:bg-[#1C1917]"
+                    />
+                  </div>
+                  {authError && <div className="text-red-600">{authError}</div>}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={async () => {
+                        const res = await signInWithPassword(authEmail, authPassword);
+                        if (!res.error) notify('Signed in via Supabase Auth', 'success');
+                      }}
+                      disabled={authLoading}
+                      className="px-3 py-1.5 rounded-lg bg-amber-700 text-white font-semibold"
+                    >
+                      Sign In
+                    </button>
+                    <button
+                      onClick={async () => {
+                        const res = await signUp(authEmail, authPassword);
+                        if (!res.error) notify('Account created — check inbox if confirmation is enabled', 'success');
+                      }}
+                      disabled={authLoading}
+                      className="px-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-800 font-semibold"
+                    >
+                      Register
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="bg-white dark:bg-[#171412] border border-stone-200 dark:border-stone-800 rounded-xl p-5 space-y-3 text-xs">
               <h3 className="font-display font-semibold text-sm inline-flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-amber-700" /> Two-Factor Auth & Recovery Codes
