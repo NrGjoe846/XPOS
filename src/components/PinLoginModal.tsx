@@ -89,12 +89,12 @@ export const PinLoginModal: React.FC = () => {
             )}
           </div>
           <h3 className="font-display font-bold text-base text-stone-900 dark:text-stone-100">
-            {isSessionActive ? 'Switch Operator or Lock Terminal' : 'Sign In to Nodedr OrderRestro'}
+            {isSessionActive ? 'Switch Operator — UNAI POS' : 'Sign In to UNAI POS'}
           </h3>
           <p className="text-xs text-stone-500 dark:text-stone-400">
             {isSessionActive
               ? 'Enter another staff PIN or manage your active session.'
-              : 'Authenticate with an operator PIN, Gmail OAuth, or Supabase account to access POS & back-office modules.'}
+              : 'Authenticate with Gmail, email account, or staff PIN to access UNAI POS.'}
           </p>
         </div>
 

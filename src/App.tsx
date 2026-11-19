@@ -1,6 +1,6 @@
 import React from 'react';
 import { AppProvider, useApp } from './context/AppContext';
-import { AuthProtectionProvider, withAuthProtection } from './context/AuthContext';
+import { AuthProtectionProvider, useAuthProtection, withAuthProtection } from './context/AuthContext';
 import { Layout } from './components/Layout';
 import { OnboardingPage } from './components/OnboardingPage';
 import { PinLoginModal } from './components/PinLoginModal';
@@ -85,7 +85,8 @@ const WorkspaceShell: React.FC = () => {
 const ProtectedWorkspace = withAuthProtection(WorkspaceShell, { requireActiveModuleAccess: false });
 
 const MainRouter: React.FC = () => {
-  const { loading, onboardingOpen, setOnboardingOpen, setPinModalOpen } = useApp();
+  const { db, loading, onboardingOpen, setOnboardingOpen } = useApp();
+  const { isSessionActive, authLoading } = useAuthProtection();
 
   const urlMode = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('mode') : null;
   if (urlMode === 'display') {
@@ -99,29 +100,27 @@ const MainRouter: React.FC = () => {
     );
   }
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] dark:bg-[#0C0A09] text-sm text-stone-500">
-        Loading Nodedr OrderRestro workspace...
+        Loading UNAI POS workspace...
       </div>
     );
   }
 
-  const exitOnboarding = (openPinAfter: boolean) => {
+  const exitOnboarding = () => {
     setOnboardingOpen(false);
     if (typeof window !== 'undefined' && window.location.search.includes('mode=onboarding')) {
       window.history.replaceState({}, '', '/');
     }
-    if (openPinAfter) {
-      setPinModalOpen(true);
-    }
   };
 
-  if (onboardingOpen) {
+  if (!isSessionActive || onboardingOpen) {
+    const initialMode = !isSessionActive && db?.onboarding?.completed ? 'signin' : 'onboarding';
     return (
       <OnboardingPage
-        onCompleteToDashboard={() => exitOnboarding(false)}
-        onSwitchToPinLogin={() => exitOnboarding(true)}
+        initialMode={initialMode}
+        onCompleteToDashboard={exitOnboarding}
       />
     );
   }

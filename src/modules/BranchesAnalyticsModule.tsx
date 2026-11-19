@@ -34,7 +34,7 @@ export const BranchesAnalyticsModule: React.FC<{ initialView?: 'analytics' | 'br
 
   const [view, setView] = useState<'analytics' | 'branches'>(initialView);
   const [selectedReport, setSelectedReport] = useState<string>(REPORT_LIST[0]);
-  const [schedEmail, setSchedEmail] = useState('owner@orderrestro.in');
+  const [schedEmail, setSchedEmail] = useState('owner@unaipos.in');
   const [schedFreq, setSchedFreq] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [schedFormat, setSchedFormat] = useState<'CSV' | 'Excel' | 'PDF'>('Excel');
 

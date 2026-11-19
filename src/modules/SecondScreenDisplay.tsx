@@ -11,7 +11,7 @@ export const SecondScreenDisplay: React.FC = () => {
       // ignore
     }
     return {
-      branchName: 'Nodedr OrderRestro',
+      branchName: 'UNAI POS',
       currencySymbol: '₹',
       items: [],
       subtotal: 0,

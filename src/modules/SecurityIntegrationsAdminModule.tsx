@@ -54,7 +54,7 @@ export const SecurityIntegrationsAdminModule: React.FC<{ initialTab?: 'security'
   const [branchName, setBranchName] = useState(activeBranch?.name || '');
   const [taxRegime, setTaxRegime] = useState<TaxRegime>(activeBranch?.taxRegime || 'IN_GST');
   const [upiVpa, setUpiVpa] = useState(activeBranch?.upiVpa || 'orderrestro@hdfcbank');
-  const [upiName, setUpiName] = useState(activeBranch?.upiMerchantName || 'Nodedr OrderRestro');
+  const [upiName, setUpiName] = useState(activeBranch?.upiMerchantName || 'UNAI POS');
 
   const verify2FA = async () => {
     if (!currentStaff) return;
@@ -247,7 +247,7 @@ export const SecurityIntegrationsAdminModule: React.FC<{ initialTab?: 'security'
               </div>
               <div className="flex flex-wrap gap-2 pt-1">
                 <button
-                  onClick={() => downloadJson(`orderrestro-backup-${Date.now()}.json`, db)}
+                  onClick={() => downloadJson(`unai-pos-backup-${Date.now()}.json`, db)}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-800 font-medium"
                 >
                   <Download className="w-3.5 h-3.5" /> Export Backup JSON
@@ -308,7 +308,7 @@ export const SecurityIntegrationsAdminModule: React.FC<{ initialTab?: 'security'
               </button>
               <button
                 onClick={async () => {
-                  const r = await printViaWebUSB('NODEDR ORDERRESTRO\nTEST ESC/POS THERMAL RECEIPT\nOK\n', true);
+                  const r = await printViaWebUSB('UNAI POS\nTEST ESC/POS THERMAL RECEIPT\nOK\n', true);
                   notify(r.message, r.ok ? 'success' : 'info');
                 }}
                 className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-stone-200 dark:border-stone-800 font-medium"
@@ -325,7 +325,7 @@ export const SecurityIntegrationsAdminModule: React.FC<{ initialTab?: 'security'
                 Pulse Cash Drawer
               </button>
               <button
-                onClick={() => window.open(`${window.location.origin}/?mode=display`, 'OrderRestroSecondScreen')}
+                onClick={() => window.open(`${window.location.origin}/?mode=display`, 'UnaiPosSecondScreen')}
                 className="px-3.5 py-2 rounded-lg bg-amber-700 text-white font-semibold"
               >
                 Open Customer Second Screen

@@ -41,7 +41,7 @@ wss.on('connection', (ws) => {
 
 // --- Health & Bootstrap ---
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'Nodedr OrderRestro', uptime: process.uptime() });
+  res.json({ ok: true, service: 'UNAI POS', uptime: process.uptime() });
 });
 
 app.get('/api/state', (_req, res) => {
@@ -120,7 +120,7 @@ app.get(['/auth/callback', '/auth/callback/'], (_req, res) => {
   <body>
     <div class="box">
       <h2>Authentication Complete</h2>
-      <p>Connecting your Gmail session to Nodedr OrderRestro...</p>
+      <p>Connecting your Gmail session to UNAI POS...</p>
     </div>
     <script>
       (function () {
@@ -229,7 +229,7 @@ app.post('/api/onboarding/complete', (req, res) => {
         id: ownerStaffId,
         branchId: branch?.id || 'br-blr-1',
         name: cleanOwnerName,
-        email: cleanEmail || 'owner@orderrestro.in',
+        email: cleanEmail || 'owner@unaipos.in',
         roleId: 'role-owner',
         roleName: 'Owner / Admin',
         pin: cleanPin,
@@ -951,7 +951,7 @@ app.post('/api/mutate', (req, res) => {
 app.get('/api/openapi.json', (_req, res) => {
   res.json({
     openapi: '3.0.3',
-    info: { title: 'Nodedr OrderRestro POS API', version: '2.0.0' },
+    info: { title: 'UNAI POS API', version: '2.0.0' },
     paths: {
       '/api/health': { get: { summary: 'Health & uptime status' } },
       '/api/state': { get: { summary: 'Fetch complete multi-branch operational state' } },
@@ -974,7 +974,7 @@ app.post('/api/mcp', (req, res) => {
       id,
       result: {
         protocolVersion: '2024-11-05',
-        serverInfo: { name: 'nodedr-orderrestro-mcp', version: '1.0.0' },
+        serverInfo: { name: 'unai-pos-mcp', version: '1.0.0' },
         capabilities: { tools: {} },
       },
     });
@@ -1020,7 +1020,7 @@ async function startServer() {
   }
 
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Nodedr OrderRestro server running on http://0.0.0.0:${PORT}`);
+    console.log(`UNAI POS server running on http://0.0.0.0:${PORT}`);
     void store.hydrateFromSupabase().then((hydrated) => {
       if (hydrated) broadcast('state:mutated', { source: 'supabase' });
     });

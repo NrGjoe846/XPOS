@@ -91,7 +91,8 @@ export function useUser(): { user: User | null; loading: boolean; error: AuthErr
 
 /**
  * Unified authentication hook wrapping useSession and useUser with Google/Gmail OAuth
- * (popup-safe for iframe previews), Magic Link OTP, email/password, and sign-out helpers.
+ * (popup-safe for iframe previews), Magic Link OTP, email/password sign-in & sign-up,
+ * confirmation resend, and sign-out helpers.
  */
 export function useAuth() {
   const supabase = useMemo(() => createClient(), []);
@@ -187,7 +188,6 @@ export function useAuth() {
           setActionLoading(false);
           return { data, error: new Error(blockedMsg) };
         }
-        // Poll popup close in case user cancels Google prompt manually
         const pollTimer = window.setInterval(() => {
           if (popup.closed) {
             window.clearInterval(pollTimer);
@@ -218,7 +218,7 @@ export function useAuth() {
       setActionError(null);
       try {
         const result = await supabase.auth.signInWithOtp({
-          email,
+          email: email.trim(),
           options: {
             emailRedirectTo: `${window.location.origin}/auth/callback`,
           },
@@ -239,30 +239,96 @@ export function useAuth() {
         setActionError(msg);
         return { data: null, error: new Error(msg) };
       }
-      setActionLoading(true);
-      setActionError(null);
-      try {
-        const result = await supabase.auth.signInWithPassword({ email, password });
-        if (result.error) setActionError(result.error.message);
-        return result;
-      } finally {
-        setActionLoading(false);
-      }
-    },
-    [supabase]
-  );
-
-  const signUp = useCallback(
-    async (email: string, password: string) => {
-      if (!supabase) {
-        const msg = 'Supabase client is not configured';
+      const cleanEmail = email.trim();
+      if (!cleanEmail || !password) {
+        const msg = 'Email and password are required';
         setActionError(msg);
         return { data: null, error: new Error(msg) };
       }
       setActionLoading(true);
       setActionError(null);
       try {
-        const result = await supabase.auth.signUp({ email, password });
+        const result = await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+        if (result.error) {
+          setActionError(result.error.message);
+        } else if (result.data.session) {
+          await refreshSession();
+        }
+        return result;
+      } finally {
+        setActionLoading(false);
+      }
+    },
+    [refreshSession, supabase]
+  );
+
+  const signUp = useCallback(
+    async (email: string, password: string, fullName?: string) => {
+      if (!supabase) {
+        const msg = 'Supabase client is not configured';
+        setActionError(msg);
+        return { data: null, error: new Error(msg), needsEmailConfirmation: false };
+      }
+      const cleanEmail = email.trim();
+      if (!cleanEmail) {
+        const msg = 'Please enter a valid email address';
+        setActionError(msg);
+        return { data: null, error: new Error(msg), needsEmailConfirmation: false };
+      }
+      if (password.length < 6) {
+        const msg = 'Password must be at least 6 characters';
+        setActionError(msg);
+        return { data: null, error: new Error(msg), needsEmailConfirmation: false };
+      }
+      setActionLoading(true);
+      setActionError(null);
+      try {
+        const result = await supabase.auth.signUp({
+          email: cleanEmail,
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
+            data: fullName ? { full_name: fullName.trim() } : undefined,
+          },
+        });
+        if (result.error) {
+          setActionError(result.error.message);
+          return { ...result, needsEmailConfirmation: false };
+        }
+        // Supabase returns empty identities if the email is already registered
+        const identities = result.data.user?.identities;
+        if (result.data.user && Array.isArray(identities) && identities.length === 0) {
+          const msg = 'An account with this email already exists. Please sign in instead.';
+          setActionError(msg);
+          return { data: result.data, error: new Error(msg), needsEmailConfirmation: false };
+        }
+        if (result.data.session) {
+          await refreshSession();
+          return { ...result, needsEmailConfirmation: false };
+        }
+        return { ...result, needsEmailConfirmation: true };
+      } finally {
+        setActionLoading(false);
+      }
+    },
+    [refreshSession, supabase]
+  );
+
+  const resendConfirmation = useCallback(
+    async (email: string) => {
+      if (!supabase) {
+        const msg = 'Supabase client is not configured';
+        setActionError(msg);
+        return { error: new Error(msg) };
+      }
+      setActionLoading(true);
+      setActionError(null);
+      try {
+        const result = await supabase.auth.resend({
+          type: 'signup',
+          email: email.trim(),
+          options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+        });
         if (result.error) setActionError(result.error.message);
         return result;
       } finally {
@@ -298,6 +364,7 @@ export function useAuth() {
     signInWithOtp,
     signInWithPassword,
     signUp,
+    resendConfirmation,
     signOut,
   };
 }

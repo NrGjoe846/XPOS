@@ -94,7 +94,7 @@ export function exportReportPdfPrint(title: string, headers: string[], rows: (st
         </style>
       </head>
       <body>
-        <h1>Nodedr OrderRestro — ${title}</h1>
+        <h1>UNAI POS — ${title}</h1>
         <p>Generated on ${new Date().toLocaleString()}</p>
         <table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>
       </body>

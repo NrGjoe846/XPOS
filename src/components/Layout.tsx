@@ -25,6 +25,7 @@ import {
   Monitor,
   KeyRound,
   Lock,
+  LogOut,
   Menu,
   Store,
   Sparkles,
@@ -102,13 +103,13 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     setOnboardingOpen,
     toasts,
   } = useApp();
-  const { user, lockSession } = useAuthProtection();
+  const { user, lockSession, signOut } = useAuthProtection();
 
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const openSecondScreen = () => {
     const url = `${window.location.origin}/?mode=display`;
-    window.open(url, 'OrderRestroSecondScreen', 'noopener,noreferrer');
+    window.open(url, 'UnaiPosSecondScreen', 'noopener,noreferrer');
   };
 
   const currentLabel =
@@ -206,7 +207,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           </div>
           <button
             onClick={() => setPinModalOpen(true)}
-            title="Switch Operator PIN"
+            title="Switch Staff Operator"
             className="p-2 rounded-lg border border-stone-200 dark:border-stone-800 hover:bg-stone-100 dark:hover:bg-stone-900 transition-colors shrink-0"
           >
             <KeyRound className="w-3.5 h-3.5" />
@@ -374,7 +375,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#171412] text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-900 whitespace-nowrap shrink-0"
             >
               <KeyRound className="w-3.5 h-3.5" />
-              <span>Switch PIN</span>
+              <span>Switch Staff</span>
             </button>
             <button
               onClick={lockSession}
@@ -382,6 +383,15 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             >
               <Lock className="w-3.5 h-3.5" />
               <span>Lock</span>
+            </button>
+            <button
+              onClick={() => {
+                void signOut();
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-800 bg-white dark:bg-[#171412] text-stone-700 dark:text-stone-300 hover:bg-stone-50 dark:hover:bg-stone-900 whitespace-nowrap shrink-0"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+              <span>Sign Out</span>
             </button>
             <button
               onClick={toggleDarkMode}

@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
-import { Lock, ShieldAlert, KeyRound } from 'lucide-react';
+import { ShieldAlert, KeyRound, Mail } from 'lucide-react';
 import { ModuleId, useApp } from './AppContext';
 import { useAuth } from '../hooks/useAuth';
 import { StaffUser } from '../types/pos';
@@ -39,14 +39,17 @@ export interface AuthProtectionContextValue {
   isSessionActive: boolean;
   authLoading: boolean;
   authError: string | null;
+  clearError: () => void;
   isSupabaseConfigured: boolean;
   activeStaff: StaffUser | null;
   signInWithGoogle: ReturnType<typeof useAuth>['signInWithGoogle'];
   signInWithOtp: ReturnType<typeof useAuth>['signInWithOtp'];
   signInWithPassword: ReturnType<typeof useAuth>['signInWithPassword'];
   signUp: ReturnType<typeof useAuth>['signUp'];
+  resendConfirmation: ReturnType<typeof useAuth>['resendConfirmation'];
   signOut: () => Promise<void>;
   unlockWithPin: (pin: string) => Promise<{ ok: boolean; error?: string; staff?: StaffUser }>;
+  activateOwnerSession: (staff: StaffUser) => void;
   lockSession: () => void;
   hasModuleAccess: (moduleId: ModuleId) => boolean;
 }
@@ -54,7 +57,7 @@ export interface AuthProtectionContextValue {
 const AuthProtectionContext = createContext<AuthProtectionContextValue | null>(null);
 
 export const AuthProtectionProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { db, loading: appLoading, currentStaff, setCurrentStaff, setPinModalOpen, onboardingOpen, notify } = useApp();
+  const { db, loading: appLoading, currentStaff, setCurrentStaff, setPinModalOpen, notify } = useApp();
   const {
     session,
     user,
@@ -62,10 +65,12 @@ export const AuthProtectionProvider: React.FC<{ children: React.ReactNode }> = (
     isConfigured: isSupabaseConfigured,
     loading: supabaseLoading,
     error: authError,
+    clearError,
     signInWithGoogle,
     signInWithOtp,
     signInWithPassword,
     signUp,
+    resendConfirmation,
     signOut: supabaseSignOut,
   } = useAuth();
 
@@ -83,7 +88,7 @@ export const AuthProtectionProvider: React.FC<{ children: React.ReactNode }> = (
   const isSessionActive = supabaseAuthenticated || pinSessionActive;
   const authLoading = supabaseLoading || appLoading;
 
-  // Resolve the active staff profile from PIN override or matched Supabase user email
+  // Resolve the active staff profile from operator override or matched Supabase user email
   const activeStaff = useMemo(() => {
     if (pinStaff) return pinStaff;
     if (supabaseAuthenticated && db) {
@@ -107,27 +112,17 @@ export const AuthProtectionProvider: React.FC<{ children: React.ReactNode }> = (
     }
   }, [activeStaff, authLoading, currentStaff, setCurrentStaff]);
 
-  // Listen for inactivity timeout lock events from AppContext
+  // Listen for inactivity timeout lock events from AppContext (only if already signed in)
   useEffect(() => {
     const handleInactivityLock = () => {
+      if (!isSessionActive) return;
       sessionStorage.removeItem(PIN_SESSION_STORAGE_KEY);
       setPinStaffId(null);
       setPinModalOpen(true);
     };
     window.addEventListener('orderrestro:session-lock', handleInactivityLock);
     return () => window.removeEventListener('orderrestro:session-lock', handleInactivityLock);
-  }, [setPinModalOpen]);
-
-  // Automatically surface PinLoginModal whenever no session is active on protected routes
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const urlMode = new URLSearchParams(window.location.search).get('mode');
-      if (urlMode === 'display' || urlMode === 'qr' || urlMode === 'onboarding') return;
-    }
-    if (!authLoading && !isSessionActive && !onboardingOpen) {
-      setPinModalOpen(true);
-    }
-  }, [authLoading, isSessionActive, onboardingOpen, setPinModalOpen]);
+  }, [isSessionActive, setPinModalOpen]);
 
   const hasModuleAccessForStaff = useCallback(
     (moduleId: ModuleId, staff: StaffUser | null, isSupaAuth: boolean): boolean => {
@@ -150,6 +145,16 @@ export const AuthProtectionProvider: React.FC<{ children: React.ReactNode }> = (
       return hasModuleAccessForStaff(moduleId, activeStaff, supabaseAuthenticated);
     },
     [activeStaff, hasModuleAccessForStaff, isSessionActive, pinStaff, supabaseAuthenticated]
+  );
+
+  const activateOwnerSession = useCallback(
+    (staff: StaffUser) => {
+      sessionStorage.setItem(PIN_SESSION_STORAGE_KEY, staff.id);
+      setPinStaffId(staff.id);
+      setCurrentStaff(staff);
+      setPinModalOpen(false);
+    },
+    [setCurrentStaff, setPinModalOpen]
   );
 
   const unlockWithPin = useCallback(
@@ -182,15 +187,15 @@ export const AuthProtectionProvider: React.FC<{ children: React.ReactNode }> = (
     setPinStaffId(null);
     setCurrentStaff(null);
     setPinModalOpen(true);
-    notify('Terminal locked — authenticate to continue', 'info');
+    notify('Register locked — enter staff PIN or sign in', 'info');
   }, [notify, setCurrentStaff, setPinModalOpen]);
 
   const signOut = useCallback(async () => {
     sessionStorage.removeItem(PIN_SESSION_STORAGE_KEY);
     setPinStaffId(null);
     setCurrentStaff(null);
+    setPinModalOpen(false);
     await supabaseSignOut();
-    setPinModalOpen(true);
   }, [setCurrentStaff, setPinModalOpen, supabaseSignOut]);
 
   return (
@@ -203,14 +208,17 @@ export const AuthProtectionProvider: React.FC<{ children: React.ReactNode }> = (
         isSessionActive,
         authLoading,
         authError,
+        clearError,
         isSupabaseConfigured,
         activeStaff,
         signInWithGoogle,
         signInWithOtp,
         signInWithPassword,
         signUp,
+        resendConfirmation,
         signOut,
         unlockWithPin,
+        activateOwnerSession,
         lockSession,
         hasModuleAccess,
       }}
@@ -234,8 +242,7 @@ interface AuthProtectionOptions {
 
 /**
  * Higher-Order Component that protects restaurant management routes and modules
- * using useAuth / AuthProtectionProvider. Renders a locked state and triggers
- * PinLoginModal whenever a session is not active, and enforces role permissions.
+ * using useAuth / AuthProtectionProvider and enforces role permissions.
  */
 export function withAuthProtection<P extends object>(
   WrappedComponent: React.ComponentType<P>,
@@ -246,14 +253,14 @@ export function withAuthProtection<P extends object>(
     const { isSessionActive, authLoading, activeStaff, hasModuleAccess } = useAuthProtection();
 
     const firstAllowedModule = useMemo(() => {
-      const candidates: ModuleId[] = ['pos', 'kds', 'tables', 'inventory', 'menu', 'crm'];
+      const candidates: ModuleId[] = ['dashboard', 'pos', 'kds', 'tables', 'inventory', 'menu', 'crm'];
       return candidates.find((m) => hasModuleAccess(m)) || 'pos';
     }, [hasModuleAccess]);
 
     if (authLoading) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] dark:bg-[#0C0A09] text-sm text-stone-500">
-          Verifying authentication session...
+          Verifying UNAI POS session...
         </div>
       );
     }
@@ -261,36 +268,24 @@ export function withAuthProtection<P extends object>(
     if (!isSessionActive) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-[#FAF9F6] dark:bg-[#0C0A09] p-6">
-          <div className="max-w-sm w-full bg-white dark:bg-[#171412] border border-stone-200 dark:border-stone-800 rounded-xl p-6 text-center space-y-4">
+          <div className="max-w-sm w-full bg-white dark:bg-[#171412] border border-stone-200 dark:border-stone-800 rounded-2xl p-6 text-center space-y-4">
             <div className="w-11 h-11 rounded-full bg-amber-50 dark:bg-amber-950/50 border border-amber-200 dark:border-amber-800 flex items-center justify-center mx-auto">
-              <Lock className="w-5 h-5 text-amber-700 dark:text-amber-400" />
+              <Mail className="w-5 h-5 text-amber-700 dark:text-amber-400" />
             </div>
             <div className="space-y-1">
               <h2 className="font-display font-bold text-base text-stone-900 dark:text-stone-100">
-                Terminal Authentication Required
+                Sign In to UNAI POS
               </h2>
               <p className="text-xs text-stone-500 dark:text-stone-400">
-                Enter an authorized operator PIN or sign in with Gmail / Supabase to access Nodedr OrderRestro modules.
+                Sign in with Gmail or your account credentials to access your brand dashboard and POS modules.
               </p>
             </div>
-            <div className="space-y-2">
-              <button
-                onClick={() => setPinModalOpen(true)}
-                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-amber-700 hover:bg-amber-800 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
-              >
-                <KeyRound className="w-3.5 h-3.5" />
-                <span>Open Sign-In &amp; PIN Keypad</span>
-              </button>
-              <button
-                onClick={() => {
-                  setPinModalOpen(false);
-                  setOnboardingOpen(true);
-                }}
-                className="w-full px-4 py-2 rounded-lg border border-stone-200 dark:border-stone-800 hover:bg-stone-50 dark:hover:bg-stone-900 text-xs font-medium text-stone-700 dark:text-stone-300 whitespace-nowrap shrink-0"
-              >
-                New Restaurant Onboarding (Gmail)
-              </button>
-            </div>
+            <button
+              onClick={() => setOnboardingOpen(true)}
+              className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-700 hover:bg-amber-800 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
+            >
+              <span>Continue to Sign In / Sign Up</span>
+            </button>
           </div>
         </div>
       );
@@ -316,7 +311,7 @@ export function withAuthProtection<P extends object>(
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-amber-700 hover:bg-amber-800 text-white text-xs font-semibold transition-colors whitespace-nowrap shrink-0"
             >
               <KeyRound className="w-3.5 h-3.5" />
-              <span>Switch Operator PIN</span>
+              <span>Switch Operator</span>
             </button>
             <button
               onClick={() => setActiveModule(firstAllowedModule)}

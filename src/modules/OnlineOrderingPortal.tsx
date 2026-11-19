@@ -130,7 +130,7 @@ export const OnlineOrderingPortal: React.FC = () => {
       <div className="relative rounded-xl overflow-hidden border border-stone-200 dark:border-stone-800 h-44">
         <img
           src="/src/assets/images/hero_dining_ambiance_1795061819168.jpg"
-          alt="Nodedr OrderRestro Dining Room"
+          alt="UNAI POS Dining Room"
           referrerPolicy="no-referrer"
           className="w-full h-full object-cover"
         />
