@@ -1,0 +1,6 @@
+{
+  "name": "Nodedr OrderRestro",
+  "description": "Full-stack 20-module restaurant POS, visual floor plan, live-code QR ordering, multi-station KDS, inventory & production costing, payroll, accounting, analytics, and hardware integration suite.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
